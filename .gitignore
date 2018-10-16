@@ -22,6 +22,9 @@ fs.img
 xv6.img
 xv6memfs.img
 
+# files opened in an editor
+*.swp
+
 # other generated files
 bootother
 initcode

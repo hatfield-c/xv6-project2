@@ -18,7 +18,7 @@ extern void forkret(void);
 extern void trapret(void);
 
 static void wakeup1(void *chan);
-
+int proc_track = 0;
 void
 pinit(void)
 {
@@ -45,6 +45,7 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->tickets = 0;
   release(&ptable.lock);
 
   // Allocate kernel stack if possible.
