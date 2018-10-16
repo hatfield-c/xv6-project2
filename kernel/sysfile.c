@@ -390,3 +390,14 @@ sys_pipe(void)
   fd[1] = fd1;
   return 0;
 }
+
+int sys_settickets(void){
+  int ticketNo;
+
+  if(argint(0, (int*)&ticketNo) < 0 || ticketNo < 1){
+      return -1;
+  }
+
+  proc->tickets = ticketNo;
+  return 0;
+}
