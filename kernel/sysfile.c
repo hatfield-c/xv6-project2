@@ -8,6 +8,7 @@
 #include "file.h"
 #include "fcntl.h"
 #include "sysfunc.h"
+#include "pstat.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -391,13 +392,37 @@ sys_pipe(void)
   return 0;
 }
 
+
+//System call to set the number of tickets a process has
 int sys_settickets(void){
+  //Init ticketNo
   int ticketNo;
 
+  //Get the ticketNo argument passed to the function, 
+  //and examine it for correctness
   if(argint(0, (int*)&ticketNo) < 0 || ticketNo < 1){
       return -1;
   }
 
+  //Set the tickets of the current process to the ticketNo
+  //passed into the system call, and return 0 for success
   proc->tickets = ticketNo;
+  return 0;
+}
+
+int sys_getpinfo(void){
+  struct pstat* localStat;
+
+  if(argptr(0, (void*)&localStat, sizeof(localStat)) < 0)
+    return -1;
+
+  int i;
+  for(i = 0; i < NPROC; i++){
+    localStat->inuse[i] = procStat.inuse[i];
+    localStat->tickets[i] = procStat.tickets[i];
+    localStat->pid[i] = procStat.pid[i];
+    localStat->ticks[i] = procStat.ticks[i];
+  }
+
   return 0;
 }

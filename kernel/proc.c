@@ -5,6 +5,7 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
+#include "pstat.h"
 
 struct {
   struct spinlock lock;
@@ -12,6 +13,7 @@ struct {
 } ptable;
 
 static struct proc *initproc;
+//struct pstat procStat;
 
 int nextpid = 1;
 extern void forkret(void);
@@ -47,6 +49,7 @@ found:
   p->state = EMBRYO;
   p->pid = nextpid++;
   p->tickets = 1;
+  p->ticks = 0;
   release(&ptable.lock);
 
   // Allocate kernel stack if possible.
@@ -281,11 +284,26 @@ scheduler(void)
     // Lock the process table
     acquire(&ptable.lock);
 
-    //Acquire the maximum number of tickets based on the number of runnable processes
+    //Acquire the maximum number of tickets based on the number of runnable processes,
+    //and gather statistic on existing processes
     int maxTickets = 0;
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-	if(p->state == RUNNABLE)
+    int curProc = 0;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++, curProc++){
+	if(p->state == RUNNABLE){
 	    maxTickets = maxTickets + p->tickets;
+	}
+
+	if(p->state == UNUSED || p->state == EMBRYO || p->state == ZOMBIE){
+            procStat.inuse[curProc] = 0;
+	    procStat.tickets[curProc] = 0;
+	    procStat.pid[curProc] = 0;
+	    procStat.ticks[curProc] = 0;
+	} else {
+            procStat.inuse[curProc] = 1;
+	    procStat.tickets[curProc] = p->tickets;
+	    procStat.pid[curProc] = p->pid;
+	    procStat.ticks[curProc] = p->ticks;
+	}
     }
 
     //If there are no processes to run, reset the lock and continue waiting for processes
@@ -314,13 +332,14 @@ scheduler(void)
       }
       
       //We have identified the process which won the lottery - now we switch to it,
-      //and allow it to run 
+      //and allow it to run
+      p->ticks = p->ticks + 1;
       proc = p;
       switchuvm(p);
       p->state = RUNNING;
       swtch(&cpu->scheduler, proc->context);
       switchkvm();
-
+      
       // Process is done running for now.
       // It should have changed its p->state before coming back.
       proc = 0;

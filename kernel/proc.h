@@ -10,6 +10,8 @@
 #define SEG_TSS   6  // this process's task state
 #define NSEGS     7
 
+#include "pstat.h"
+
 // Per-CPU state
 struct cpu {
   uchar id;                    // Local APIC ID; index into cpus[] below
@@ -38,6 +40,7 @@ extern int ncpu;
 // in thread libraries such as Linux pthreads.
 extern struct cpu *cpu asm("%gs:0");       // &cpus[cpunum()]
 extern struct proc *proc asm("%gs:4");     // cpus[cpunum()].proc
+struct pstat procStat;
 
 // Saved registers for kernel context switches.
 // Don't need to save all the segment registers (%cs, etc),
@@ -75,6 +78,7 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
   int tickets;		       // The number of lottery tickets the process has
+  int ticks;                   // The number of ticks this process has executed
 };
 
 // Process memory is laid out contiguously, low addresses first:
