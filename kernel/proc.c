@@ -146,6 +146,7 @@ fork(void)
   np->sz = proc->sz;
   np->parent = proc;
   *np->tf = *proc->tf;
+  np->tickets = proc->tickets;
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
@@ -305,7 +306,6 @@ scheduler(void)
       //If the current process isn't runnable, then don't examine it
       if(p->state != RUNNABLE)
         continue;
-      
       //If the winning number is outside the ticket bounds, then increase the bounds appropriately
       //and continue to check next process. Eventually, the winning number will be found.
       if(winningNumber > (currentTickets + p->tickets)){
