@@ -9,9 +9,12 @@
 #include "x86.h"
 #include "mmu.h"
 #include "proc.h"
+#include "spinlock.h"
 
 struct cpu cpus[NCPU];
 static struct cpu *bcpu;
+struct pstat procStat;
+struct spinlock statlock;
 int ismp;
 int ncpu;
 uchar ioapicid;

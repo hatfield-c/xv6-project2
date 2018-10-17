@@ -9,6 +9,7 @@
 #include "fcntl.h"
 #include "sysfunc.h"
 #include "pstat.h"
+#include "spinlock.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -398,6 +399,8 @@ int sys_settickets(void){
   //Init ticketNo
   int ticketNo;
 
+  acquire(&statlock);
+
   //Get the ticketNo argument passed to the function, 
   //and examine it for correctness
   if(argint(0, (int*)&ticketNo) < 0 || ticketNo < 1){
@@ -407,22 +410,29 @@ int sys_settickets(void){
   //Set the tickets of the current process to the ticketNo
   //passed into the system call, and return 0 for success
   proc->tickets = ticketNo;
+
+  release(&statlock);
+  yield();
   return 0;
 }
 
 int sys_getpinfo(void){
-  struct pstat* localStat;
+  struct pstat *localStat;
 
   if(argptr(0, (void*)&localStat, sizeof(localStat)) < 0)
     return -1;
 
+  acquire(&statlock);
   int i;
   for(i = 0; i < NPROC; i++){
     localStat->inuse[i] = procStat.inuse[i];
     localStat->tickets[i] = procStat.tickets[i];
     localStat->pid[i] = procStat.pid[i];
     localStat->ticks[i] = procStat.ticks[i];
+    //if(localStat->pid[i] > 2)
+    //cprintf("   (CPU: %d)[PID: %d][L-TIC: %d][P-TIC: %d]\n", cpu->id, procStat.pid[i], procStat.tickets[i], proc->tickets);
   }
-
+  release(&statlock);
+  
   return 0;
 }

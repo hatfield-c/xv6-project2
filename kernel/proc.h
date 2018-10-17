@@ -11,6 +11,7 @@
 #define NSEGS     7
 
 #include "pstat.h"
+#include "spinlock.h"
 
 // Per-CPU state
 struct cpu {
@@ -29,6 +30,8 @@ struct cpu {
 
 extern struct cpu cpus[NCPU];
 extern int ncpu;
+extern struct pstat procStat;
+extern struct spinlock statlock;
 
 // Per-CPU variables, holding pointers to the
 // current cpu and to the current process.
@@ -40,7 +43,8 @@ extern int ncpu;
 // in thread libraries such as Linux pthreads.
 extern struct cpu *cpu asm("%gs:0");       // &cpus[cpunum()]
 extern struct proc *proc asm("%gs:4");     // cpus[cpunum()].proc
-struct pstat procStat;
+extern struct proc *proc asm("%gs:4");     // cpus[cpunum()].proc
+
 
 // Saved registers for kernel context switches.
 // Don't need to save all the segment registers (%cs, etc),

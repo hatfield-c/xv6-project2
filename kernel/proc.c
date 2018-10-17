@@ -6,6 +6,7 @@
 #include "proc.h"
 #include "spinlock.h"
 #include "pstat.h"
+#include "sysfunc.h"
 
 struct {
   struct spinlock lock;
@@ -13,7 +14,8 @@ struct {
 } ptable;
 
 static struct proc *initproc;
-//struct pstat procStat;
+//static struct pstat procStat;
+//static struct spinlock statlock;
 
 int nextpid = 1;
 extern void forkret(void);
@@ -149,7 +151,7 @@ fork(void)
   np->sz = proc->sz;
   np->parent = proc;
   *np->tf = *proc->tf;
-  np->tickets = proc->tickets;
+  //np->tickets = proc->tickets;
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
@@ -253,10 +255,12 @@ wait(void)
 
 // Psuedo-random number generator for use with the lottery scheduler
 // Returns a random number between 0 and maxTickets
-int lottery(int maxTickets){
-    //Generate a new seed based in part on the number of maxTickets,
+int lottery(int maxTickets, int variant){
+    //Generate a new seed based in part on an added variant,
     //which will increase randomness the more time the it runs
-    lotSeed = (7452569 * lotSeed * maxTickets + 5671843);
+    int i;
+    for(i = 0; i < 10; i++)
+	    lotSeed = (1103515245 * (lotSeed * variant) + 12345);
 
     //Generate our random number based on the modulus operator and the seed
     int winningNumber = lotSeed % maxTickets;
@@ -277,6 +281,7 @@ void
 scheduler(void)
 {
   struct proc *p;
+  int lotteryVariant = 1;
 
   for(;;){
     // Enable interrupts on this processor.
@@ -285,13 +290,16 @@ scheduler(void)
     acquire(&ptable.lock);
 
     //Acquire the maximum number of tickets based on the number of runnable processes,
-    //and gather statistic on existing processes
+    //and gather statistics on existing processes
     int maxTickets = 0;
     int curProc = 0;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++, curProc++){
 	if(p->state == RUNNABLE){
 	    maxTickets = maxTickets + p->tickets;
 	}
+
+	//if(p->pid > 2)
+	//	cprintf("{CPU: %d}[P-ID: %d][PTIC: %d]\n", cpu->id, p->pid, p->tickets);
 
 	if(p->state == UNUSED || p->state == EMBRYO || p->state == ZOMBIE){
             procStat.inuse[curProc] = 0;
@@ -303,6 +311,8 @@ scheduler(void)
 	    procStat.tickets[curProc] = p->tickets;
 	    procStat.pid[curProc] = p->pid;
 	    procStat.ticks[curProc] = p->ticks;
+
+	    lotteryVariant = p->tickets;
 	}
     }
 
@@ -313,7 +323,7 @@ scheduler(void)
     }
 
     //Get the winning number of our lottery, with maxTickets being the largest possible value
-    int winningNumber = lottery(maxTickets);
+    int winningNumber = lottery(maxTickets, lotteryVariant);
 
     //Initialize the current ticket we are examining
     int currentTickets = 0;
@@ -348,7 +358,7 @@ scheduler(void)
       //this iteration is complete.
       break;
     }
-    //Release the process table lock before we enter the next iteration.
+    //Release the process table lock before we enter the next iteration
     release(&ptable.lock);
   }
 }
