@@ -30,6 +30,8 @@ struct cpu {
 
 extern struct cpu cpus[NCPU];
 extern int ncpu;
+
+// Structures to hold data about the processes, and a lock to protect that data
 extern struct pstat procStat;
 extern struct spinlock statlock;
 

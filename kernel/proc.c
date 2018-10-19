@@ -20,7 +20,7 @@ static struct proc *initproc;
 int nextpid = 1;
 extern void forkret(void);
 extern void trapret(void);
-unsigned int lotSeed = 6524;
+unsigned int lotSeed = 1;
 
 static void wakeup1(void *chan);
 int proc_track = 0;
@@ -151,7 +151,7 @@ fork(void)
   np->sz = proc->sz;
   np->parent = proc;
   *np->tf = *proc->tf;
-  //np->tickets = proc->tickets;
+  np->tickets = proc->tickets;
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
@@ -254,26 +254,36 @@ wait(void)
 }
 
 // Psuedo-random number generator for use with the lottery scheduler
-// Returns a random number between 0 and maxTickets
-int lottery(int maxTickets, int variant){
-    //Generate a new seed based in part on an added variant,
-    //which will increase randomness the more time the it runs
-    int i;
-    for(i = 0; i < 10; i++)
-	    lotSeed = (1103515245 * (lotSeed * variant) + 12345);
+// Uses bit shifting and overflow to achieve a very long period before
+// repeat
+int lottery(int tickets){
+    static int seed1 = 123456789;
+    static int seed2 = 362436069;
+    static int seed3 = 521288629;
+    static int seed4 = 88675123;
+    int variant;
 
-    //Generate our random number based on the modulus operator and the seed
-    int winningNumber = lotSeed % maxTickets;
+    // Calculate a random number
+    variant = seed1 ^ (seed1 << 11);
+    seed1 = seed2;
+    seed2 = seed3;
+    seed3 = seed4;
+    seed4 = seed4 ^ (seed4 >> 19) ^ (variant ^ (variant >> 8));
 
-    //Return our winning number, accounting for offset
-    return winningNumber + 1;
+    // Use that number as a seed to return a random number between 1
+    // and tickets
+    return (seed4 % tickets) + 1;
 }
 
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
 // Scheduler never returns.  It loops, doing:
-//  - generate a random number
-//  - loop until it finds a process with the winning number
+//  - gather info about current process
+//  - generates a random number per process
+//      based on its tickets. More tickets
+//      means higher numbers.
+//  - loop through all processes - the process with
+//      the highest number wins
 //  - swtch to start running that process
 //  - eventually that process transfers control
 //      via swtch back to the scheduler.
@@ -281,26 +291,34 @@ void
 scheduler(void)
 {
   struct proc *p;
-  int lotteryVariant = 1;
 
   for(;;){
     // Enable interrupts on this processor.
     sti();
+
     // Lock the process table
     acquire(&ptable.lock);
-
-    //Acquire the maximum number of tickets based on the number of runnable processes,
-    //and gather statistics on existing processes
-    int maxTickets = 0;
+    
+    // A loop to gather data about runnable processes
     int curProc = 0;
+    int noWinner = 1;
+    int lotResults[NPROC]; 
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++, curProc++){
+        // If the process is runnable, generate a lottery number for it
+	// based on the number of tickets it has
 	if(p->state == RUNNABLE){
-	    maxTickets = maxTickets + p->tickets;
+            lotResults[curProc] = lottery(p->tickets);
+
+            // Safety check - if any process has a lottery number above zero
+	    // then there is at least one winner
+	    if(lotResults[curProc] > 0)
+	      noWinner = 0;
+	} else {
+	    // If the process is not runnable, then it is not eligible for the lottery
+	    lotResults[curProc] = -1;
 	}
 
-	//if(p->pid > 2)
-	//	cprintf("{CPU: %d}[P-ID: %d][PTIC: %d]\n", cpu->id, p->pid, p->tickets);
-
+        // Store data about each process, to be accessed by the getpinfo syscall
 	if(p->state == UNUSED || p->state == EMBRYO || p->state == ZOMBIE){
             procStat.inuse[curProc] = 0;
 	    procStat.tickets[curProc] = 0;
@@ -311,53 +329,51 @@ scheduler(void)
 	    procStat.tickets[curProc] = p->tickets;
 	    procStat.pid[curProc] = p->pid;
 	    procStat.ticks[curProc] = p->ticks;
-
-	    lotteryVariant = p->tickets;
 	}
     }
 
-    //If there are no processes to run, reset the lock and continue waiting for processes
-    if(maxTickets < 1){
-      release(&ptable.lock);
-      continue;
+
+    // Determine the winning process, by finding the process with the largest lottery number
+    int winningProc, curWin;
+    struct proc* winP;
+    for(curProc = 0, p = ptable.proc, winningProc = -1, curWin = 0; p < &ptable.proc[NPROC]; curProc++, p++){
+        // Safety check - if no process drew winning numbers (thus meaning no winners), then select the first
+	// runnable process as the winner
+        if(noWinner && p->state == RUNNABLE){
+	    winningProc = curProc;
+            winP = p;
+	    break;
+	}
+
+        // If the current winning number is less than the winning number of the current process,
+	// then select the current process as the winner for now
+	if(curWin < lotResults[curProc]){
+	    winningProc = curProc;
+	    curWin = lotResults[curProc];
+	    winP = p;
+	}
     }
-
-    //Get the winning number of our lottery, with maxTickets being the largest possible value
-    int winningNumber = lottery(maxTickets, lotteryVariant);
-
-    //Initialize the current ticket we are examining
-    int currentTickets = 0;
-
-    //Loop through all the processes, until we find the winning number
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-
-      //If the current process isn't runnable, then don't examine it
-      if(p->state != RUNNABLE)
+    
+    // If a winning process was still not found, then there are no runnable processes.
+    // So we continue to next iteration, and wait for runnable processes.
+    if(winningProc < 0){
+        release(&ptable.lock);
         continue;
-      //If the winning number is outside the ticket bounds, then increase the bounds appropriately
-      //and continue to check next process. Eventually, the winning number will be found.
-      if(winningNumber > (currentTickets + p->tickets)){
-        currentTickets = currentTickets + p->tickets;
-	continue;
-      }
-      
-      //We have identified the process which won the lottery - now we switch to it,
-      //and allow it to run
-      p->ticks = p->ticks + 1;
-      proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-      swtch(&cpu->scheduler, proc->context);
-      switchkvm();
-      
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      proc = 0;
-
-      //This is the winning process - there is no need to examine other processes, so
-      //this iteration is complete.
-      break;
     }
+    
+    // Switch into the process that won
+    p = winP;
+    p->ticks = p->ticks + 1;
+    proc = p;
+    switchuvm(p);
+    p->state = RUNNING;
+    swtch(&cpu->scheduler, proc->context);
+    switchkvm();
+    
+    // Process is done running for now.
+    // It should have changed its p->state before coming back.
+    proc = 0;
+
     //Release the process table lock before we enter the next iteration
     release(&ptable.lock);
   }

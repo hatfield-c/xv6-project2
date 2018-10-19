@@ -399,11 +399,10 @@ int sys_settickets(void){
   //Init ticketNo
   int ticketNo;
 
-  acquire(&statlock);
 
   //Get the ticketNo argument passed to the function, 
   //and examine it for correctness
-  if(argint(0, (int*)&ticketNo) < 0 || ticketNo < 1){
+  if(argint(0, (int*)&ticketNo) < 0 || ticketNo == NULL || ticketNo < 1){
       return -1;
   }
 
@@ -411,7 +410,6 @@ int sys_settickets(void){
   //passed into the system call, and return 0 for success
   proc->tickets = ticketNo;
 
-  release(&statlock);
   yield();
   return 0;
 }
@@ -419,7 +417,7 @@ int sys_settickets(void){
 int sys_getpinfo(void){
   struct pstat *localStat;
 
-  if(argptr(0, (void*)&localStat, sizeof(localStat)) < 0)
+  if(argptr(0, (void*)&localStat, sizeof(localStat)) < 0 || localStat == NULL)
     return -1;
 
   acquire(&statlock);
@@ -429,8 +427,6 @@ int sys_getpinfo(void){
     localStat->tickets[i] = procStat.tickets[i];
     localStat->pid[i] = procStat.pid[i];
     localStat->ticks[i] = procStat.ticks[i];
-    //if(localStat->pid[i] > 2)
-    //cprintf("   (CPU: %d)[PID: %d][L-TIC: %d][P-TIC: %d]\n", cpu->id, procStat.pid[i], procStat.tickets[i], proc->tickets);
   }
   release(&statlock);
   
